@@ -6,7 +6,7 @@ public class RouteTransformer : DynamicRouteValueTransformer
 {
     public override ValueTask<RouteValueDictionary> TransformAsync(HttpContext httpContext, RouteValueDictionary values)
     {
-        values["page"] = "/Index";
+        values["page"] = "/About";
         return ValueTask.FromResult(values);
     }
 }
