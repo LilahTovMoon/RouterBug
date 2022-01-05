@@ -8,7 +8,7 @@ To reproduce:
 
 2. Create this `DynamicRouteValueTransformer`
 
-```
+```c#
 public class RouteTransformer : DynamicRouteValueTransformer
 {   
     public override ValueTask<RouteValueDictionary> TransformAsync(HttpContext httpContext, RouteValueDictionary values)
@@ -21,7 +21,7 @@ public class RouteTransformer : DynamicRouteValueTransformer
 ```
 
 3. Register it in Program.cs
-```
+```c#
 app.MapDynamicPageRoute<RouteTransformer>("{**dynamicRoute}");
 ```
 
@@ -43,9 +43,9 @@ For example, change `RouteTransformer` to have `values["page"] = "/Privacy";` an
 
 I don't know enough about ASP.NET's routing internals so the following might be wrong.
 
-It seems like we're getting two routes for `/Index` rather than a route for `/Index` and a route for `/`. For something like `/Privacy.cshtml` there's only one path, but for something like `/Index.cshtml` there are two paths.
+It's getting two routes for `/Index` rather than a route for `"/Index"` and a route for `""`.
 
-When applying the `DynamicPageEndpointMatcherPolicy` and specifically `selector.SelectEndpoints`, we end up matching two routes because `ActionSelectionTable<Endpoint> Table` has two entries for `new string[] {"/Index"}` via `ActionSelectionTable.Select` when it does `OrdinalEntries.TryGetValue`. This gets populated off the `ActionDescriptor.RouteValues` via `ActionSelectionTable.Create` (see the lambda in there). **tl;dr: We have two entries that have a `RouteValues` that match `/Index`.**
+When applying the [DynamicPageEndpointMatcherPolicy](https://github.com/dotnet/aspnetcore/blob/main/src/Mvc/Mvc.RazorPages/src/Infrastructure/DynamicPageEndpointMatcherPolicy.cs) and specifically `selector.SelectEndpoints`, we end up matching two routes because `ActionSelectionTable<Endpoint> Table` has two entries for `new string[] {"/Index"}` via `ActionSelectionTable.Select`. This gets populated off the `ActionDescriptor.RouteValues` via [ActionSelectionTable.Create](https://github.com/dotnet/aspnetcore/blob/main/src/Mvc/Mvc.Core/src/Infrastructure/ActionSelectionTable.cs#L95). **tl;dr: We have two entries that have a `RouteValues` that match `/Index`.**
 
 So where does this happen? It looks like [PageActionDescriptorProvider](https://github.com/dotnet/aspnetcore/blob/main/src/Mvc/Mvc.RazorPages/src/Infrastructure/PageActionDescriptorProvider.cs) takes the `/Index` route with two selectors and sets two `Index` routes in `AddActionDescriptors` ([one for each selector](https://github.com/dotnet/aspnetcore/blob/main/src/Mvc/Mvc.RazorPages/src/Infrastructure/PageActionDescriptorProvider.cs#L110)). The problem is that it uses `model.RouteValues` for each selector and so it gets two `/Index` routes rather than a `/Index` and `/`.
 
@@ -53,7 +53,7 @@ So how should this be fixed? I'm not sure. **It seems like we need something lik
 
 Maybe:
 
-```
+```c#
 var pageRouteMetadata = selectorModel.EndpointMetadata.OfType<PageRouteMetadata>().SingleOrDefault();
 if (pageRouteMetadata != null)
 {
@@ -66,4 +66,4 @@ But this is where I'm running into a wall since Rider doesn't seem to want to op
 
 There's a [test](https://github.com/dotnet/aspnetcore/blob/main/src/Mvc/Mvc.RazorPages/test/Infrastructure/PageActionDescriptorProviderTest.cs#L332-L339) which seems to think the `descriptor.RouteValues["page"]` should have `/Index` for both descriptors, despite the `descriptor.AttributeRouteInfo.Template` only having `/Index` in one of the two. So I could simply be wrong about the RouteValues.
 
-I can use an `IPageRouteModelConvention` to remove the `/Index` selector and reset the model.RouteValues["page"] to exclude `/Index`. I'm not sure I'd ever want to route to `/People/Index` instead of just `/People`. A demo of this is shown at https://github.com/lilahtovmoon/RouterBug/tree/customPageRouteModelConvention
+I can use a [custom IPageRouteModelConvention](https://github.com/lilahtovmoon/RouterBug/blob/customPageRouteModelConvention/RouterBug/Routing/CustomPageRouteModelConvention.cs) to remove the `/Index` selector and reset the `model.RouteValues["page"]` to exclude `/Index`. I'm not sure I'd ever want to route to `/People/Index` instead of just `/People` so there is a workaround.
